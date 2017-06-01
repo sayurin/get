@@ -50,32 +50,34 @@ namespace sayuri {
 		template<class T, class TT = std::remove_reference_t<T>> inline constexpr T&& forward(TT& arg) noexcept { return static_cast<T&&>(arg); }
 		template<class T, class TT = std::remove_reference_t<T>> inline constexpr T&& forward(TT&& arg) noexcept { static_assert(!std::is_lvalue_reference<T>::value, "bad forward call"); return static_cast<T&&>(arg); }
 
-		template<class Type> struct result_info_ {
+		template<class Type> struct result_info_normal {
 			using result_type = Type;
 			static inline auto get_address(result_type&& result) { return &result; }
 		};
-		template<class Type> struct result_info_com : result_info_<Type> {
+		template<class Type> struct result_info_com {
+			using result_type = Type;
 			static inline auto get_address(result_type&& result) { return IID_PPV_ARGS_Helper(&result); }
 		};
-		template<Mode mode, class Interface, class Type, class = void> struct result_info : result_info_<std::remove_pointer_t<Type>> { static_assert(std::is_void_v<Interface>, "Interface should be void."); };
+		template<Mode mode, class Interface, class Type, class = void> struct result_info : result_info_normal<std::remove_pointer_t<Type>> { static_assert(std::is_void_v<Interface>, "Interface should be void."); };
 #ifdef _WRL_CLIENT_H_
 		template<class T, class I> inline auto forward(Microsoft::WRL::ComPtr<I>& arg) { return arg.Get(); }
-		template<class Interface> struct result_info<Mode::WRL, void, Interface**, std::enable_if_t<std::is_base_of_v<IUnknown, Interface>>> : result_info_<Microsoft::WRL::ComPtr<Interface>> {};
+		template<class Interface> struct result_info<Mode::WRL, void, Interface**, std::enable_if_t<std::is_base_of_v<IUnknown, Interface>>> : result_info_normal<Microsoft::WRL::ComPtr<Interface>> {};
 		template<class Interface> struct result_info<Mode::WRL, Interface, void**> : result_info_com<Microsoft::WRL::ComPtr<Interface>> {};
 #endif
 #ifdef __ATLCOMCLI_H__
 		template<class T, class I> inline I* forward(ATL::CComPtr<I>& arg) { return arg; }
-		template<class Interface> struct result_info<Mode::ATL, void, Interface**, std::enable_if_t<std::is_base_of_v<IUnknown, Interface>>> : result_info_<ATL::CComPtr<Interface>> {};
+		template<class Interface> struct result_info<Mode::ATL, void, Interface**, std::enable_if_t<std::is_base_of_v<IUnknown, Interface>>> : result_info_normal<ATL::CComPtr<Interface>> {};
 		template<class Interface> struct result_info<Mode::ATL, Interface, void**> : result_info_com<ATL::CComPtr<Interface>> {};
-		template<> struct result_info<Mode::ATL, void, BSTR*> : result_info_<ATL::CComBSTR> {};
+		template<> struct result_info<Mode::ATL, void, BSTR*> : result_info_normal<ATL::CComBSTR> {};
 #endif
 #ifdef _INC_COMIP
 		template<class T, class IID> inline typename _com_ptr_t<IID>::Interface* forward(_com_ptr_t<IID>& arg) { return arg; }
-		template<class Interface> struct result_info<Mode::CCS, void, Interface**, std::enable_if_t<std::is_base_of_v<IUnknown, Interface>>> : result_info_<_com_ptr_t<_com_IIID<Interface, &__uuidof(Interface)>>> {};
+		template<class Interface> struct result_info<Mode::CCS, void, Interface**, std::enable_if_t<std::is_base_of_v<IUnknown, Interface>>> : result_info_normal<_com_ptr_t<_com_IIID<Interface, &__uuidof(Interface)>>> {};
 		template<class Interface> struct result_info<Mode::CCS, Interface, void**> : result_info_com<_com_ptr_t<_com_IIID<Interface, &__uuidof(Interface)>>> {};
 #endif
 #ifdef _INC_COMUTIL
-		template<> struct result_info<Mode::CCS, void, BSTR*> : result_info_<_bstr_t> {
+		template<> struct result_info<Mode::CCS, void, BSTR*> {
+			using result_type = _bstr_t;
 			static inline auto get_address(result_type&& result) { return result.GetAddress(); }
 		};
 #endif
@@ -96,10 +98,12 @@ namespace sayuri {
 				Invoker::invoke([&] { return std::invoke(std::forward<Callable>(callable), forward<Args>(args)..., ResultInfo::get_address(std::forward<result_type>(result))); });
 				return result;
 			}
+#ifdef GUID_DEFINED	/* __uuidof() requires _GUID, and clang test it. */
 			template<class... Args, class = std::enable_if_t<CallInfo::params_size - sizeof...(Args) == 2>>
 			static inline auto get(Callable&& callable, Args&&... args) {
 				return get(std::forward<Callable>(callable), std::forward<Args>(args)..., __uuidof(Interface));
 			}
+#endif
 		};
 
 		template<class T> struct get_interface_ { using type = std::remove_pointer_t<decltype(std::declval<T>().operator->())>; };
@@ -116,10 +120,17 @@ namespace sayuri {
 		return Info::get(std::forward<Callable>(callable), std::forward<Args>(args)...);
 	}
 
+#ifdef __GNUG__
+	#define GET_MODE(MODE, OBJECT, METHOD, ...) sayuri::get<MODE>(&sayuri::details::get_interface<decltype(OBJECT)>::METHOD, OBJECT, ## __VA_ARGS__)
+	#define GET(OBJECT, METHOD, ...) GET_MODE(sayuri::Mode::Default, OBJECT, METHOD, ## __VA_ARGS__)
+	#define GETIF_MODE(INTERFACE, MODE, OBJECT, METHOD, ...) sayuri::get<INTERFACE, MODE>(&sayuri::details::get_interface<decltype(OBJECT)>::METHOD, OBJECT, ## __VA_ARGS__)
+	#define GETIF(INTERFACE, OBJECT, METHOD, ...) GETIF_MODE(INTERFACE, sayuri::Mode::Default, OBJECT, METHOD, ## __VA_ARGS__)
+#else
 	#define GET_MODE(MODE, OBJECT, METHOD, ...) sayuri::get<MODE>(&sayuri::details::get_interface<decltype(OBJECT)>::METHOD, OBJECT, __VA_ARGS__)
 	#define GET(OBJECT, METHOD, ...) GET_MODE(sayuri::Mode::Default, OBJECT, METHOD, __VA_ARGS__)
 	#define GETIF_MODE(INTERFACE, MODE, OBJECT, METHOD, ...) sayuri::get<INTERFACE, MODE>(&sayuri::details::get_interface<decltype(OBJECT)>::METHOD, OBJECT, __VA_ARGS__)
 	#define GETIF(INTERFACE, OBJECT, METHOD, ...) GETIF_MODE(INTERFACE, sayuri::Mode::Default, OBJECT, METHOD, __VA_ARGS__)
+#endif
 
 	static_assert(details::libmode(GET_MODE_DEFAULT) != Mode::Default, "GET_MODE_DEFAULT must not be sayuri::Mode::Default.");
 }
