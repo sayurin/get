@@ -1,7 +1,7 @@
 #pragma once
 #include <functional>	// std::invoke
 #include <tuple>		// std::tuple, std::tuple_element_t
-#include <type_traits>	// std::decay_t, std::enable_if_t, std::is_base_of_v, std::is_lvalue_reference, std::is_void_v, std::remove_pointer_t, std::remove_reference_t
+#include <type_traits>	// std::decay_t, std::enable_if_t, std::is_base_of_v, std::is_lvalue_reference, std::is_void_v, std::remove_pointer_t, std::remove_reference_t, std::void_t
 #include <utility>		// std::declval, std::forward
 
 namespace sayuri {
@@ -106,9 +106,9 @@ namespace sayuri {
 #endif
 		};
 
-		template<class T> struct get_interface_ { using type = std::remove_pointer_t<decltype(std::declval<T>().operator->())>; };
-		template<class T> struct get_interface_<T*> { using type = T; };
-		template<class T> using get_interface = typename get_interface_<std::decay_t<T>>::type;
+		template<class T, class = void> struct get_interface_ { using type = T; };
+		template<class T> struct get_interface_<T, std::void_t<decltype(std::declval<T>().operator->())>> { using type = decltype(std::declval<T>().operator->()); };
+		template<class T> using get_interface = std::remove_pointer_t<typename get_interface_<std::decay_t<T>>::type>;
 	}
 
 	template<Mode mode = Mode::Default, class Callable, class... Args, class Info = details::info<Callable, mode>, class Result = typename Info::result_type>	// result hit for IntelliSense.
