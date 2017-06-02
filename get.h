@@ -95,7 +95,7 @@ namespace sayuri {
 			using result_type = typename ResultInfo::result_type;
 			template<class... Args, class = std::enable_if_t<CallInfo::params_size - sizeof...(Args) == 1>, class Invoker = invoker<hasmode(mode, Mode::Ignore) || std::is_void_v<typename CallInfo::return_type>>>
 			static inline auto get(Callable&& callable, Args&&... args) {
-				result_type result;
+				result_type result{};
 				Invoker::invoke([&] { return std::invoke(std::forward<Callable>(callable), forward<Args>(args)..., ResultInfo::get_address(std::forward<result_type>(result))); });
 				return result;
 			}
