@@ -41,7 +41,8 @@ namespace sayuri {
 		};
 		template<class Callable> struct call_info;
 		#define CALL_INFO(CALL_OPT, OPT1, OPT2) template<class Return, class... Params> struct call_info<Return (CALL_OPT*)(Params...)> : call_info_<Return, Params...> {};
-		_NON_MEMBER_CALL(CALL_INFO, );
+		#pragma warning(suppress: 4003)	/* warning C4003: not enough actual parameters for macro '_NON_MEMBER_CALL' */
+		_NON_MEMBER_CALL(CALL_INFO, );	// VS2017 takes 2 args and VS2015 takes 3 args.
 		#undef CALL_INFO
 		#define CALL_INFO(CALL_OPT, OPT1, OPT2) template<class Class, class Return, class... Params> struct call_info<Return (CALL_OPT Class::*)(Params...)> : call_info_<Return, Class, Params...> {};
 		_MEMBER_CALL(CALL_INFO, , );
