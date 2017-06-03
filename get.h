@@ -1,7 +1,7 @@
 #pragma once
 #include <functional>	// std::invoke
 #include <tuple>		// std::tuple, std::tuple_element_t
-#include <type_traits>	// std::decay_t, std::enable_if_t, std::is_base_of_v, std::is_lvalue_reference, std::is_void_v, std::remove_pointer_t, std::remove_reference_t, std::void_t
+#include <type_traits>	// std::decay_t, std::enable_if_t, std::is_base_of_v, std::is_lvalue_reference_v, std::is_void_v, std::remove_pointer_t, std::remove_reference_t, std::void_t
 #include <utility>		// std::declval, std::forward
 
 namespace sayuri {
@@ -49,7 +49,10 @@ namespace sayuri {
 		#undef CALL_INFO
 
 		template<class T, class TT = std::remove_reference_t<T>> inline constexpr T&& forward(TT& arg) noexcept { return static_cast<T&&>(arg); }
-		template<class T, class TT = std::remove_reference_t<T>> inline constexpr T&& forward(TT&& arg) noexcept { static_assert(!std::is_lvalue_reference<T>::value, "bad forward call"); return static_cast<T&&>(arg); }
+		template<class T, class TT = std::remove_reference_t<T>> inline constexpr T&& forward(TT&& arg) noexcept { static_assert(!std::is_lvalue_reference_v<T>, "bad forward call"); return static_cast<T&&>(arg); }
+#ifdef _WRL_CLIENT_H_
+		template<class T, class I> inline auto forward(Microsoft::WRL::ComPtr<I>& arg) noexcept { return arg.Get(); }
+#endif
 
 		template<class Type> struct result_info_normal {
 			using result_type = Type;
@@ -61,18 +64,15 @@ namespace sayuri {
 		};
 		template<Mode mode, class Interface, class Type, class = void> struct result_info : result_info_normal<std::remove_pointer_t<Type>> { static_assert(std::is_void_v<Interface>, "Interface should be void."); };
 #ifdef _WRL_CLIENT_H_
-		template<class T, class I> inline auto forward(Microsoft::WRL::ComPtr<I>& arg) { return arg.Get(); }
 		template<class Interface> struct result_info<Mode::WRL, void, Interface**, std::enable_if_t<std::is_base_of_v<IUnknown, Interface>>> : result_info_normal<Microsoft::WRL::ComPtr<Interface>> {};
 		template<class Interface> struct result_info<Mode::WRL, Interface, void**> : result_info_com<Microsoft::WRL::ComPtr<Interface>> {};
 #endif
 #ifdef __ATLCOMCLI_H__
-		template<class T, class I> inline I* forward(ATL::CComPtr<I>& arg) { return arg; }
 		template<class Interface> struct result_info<Mode::ATL, void, Interface**, std::enable_if_t<std::is_base_of_v<IUnknown, Interface>>> : result_info_normal<ATL::CComPtr<Interface>> {};
 		template<class Interface> struct result_info<Mode::ATL, Interface, void**> : result_info_com<ATL::CComPtr<Interface>> {};
 		template<> struct result_info<Mode::ATL, void, BSTR*> : result_info_normal<ATL::CComBSTR> {};
 #endif
 #ifdef _INC_COMIP
-		template<class T, class IID> inline typename _com_ptr_t<IID>::Interface* forward(_com_ptr_t<IID>& arg) { return arg; }
 		template<class Interface> struct result_info<Mode::CCS, void, Interface**, std::enable_if_t<std::is_base_of_v<IUnknown, Interface>>> : result_info_normal<_com_ptr_t<_com_IIID<Interface, &__uuidof(Interface)>>> {};
 		template<class Interface> struct result_info<Mode::CCS, Interface, void**> : result_info_com<_com_ptr_t<_com_IIID<Interface, &__uuidof(Interface)>>> {};
 #endif
