@@ -56,7 +56,7 @@ namespace sayuri {
 
 		template<class Type> struct result_info_normal {
 			using result_type = Type;
-			static inline auto get_address(result_type&& result) { return &result; }
+			static constexpr auto get_address(result_type&& result) { return &result; }
 		};
 		template<class Type> struct result_info_com {
 			using result_type = Type;
@@ -71,6 +71,7 @@ namespace sayuri {
 		template<class Interface> struct result_info<Mode::ATL, void, Interface**, std::enable_if_t<std::is_base_of_v<IUnknown, Interface>>> : result_info_normal<ATL::CComPtr<Interface>> {};
 		template<class Interface> struct result_info<Mode::ATL, Interface, void**> : result_info_com<ATL::CComPtr<Interface>> {};
 		template<> struct result_info<Mode::ATL, void, BSTR*> : result_info_normal<ATL::CComBSTR> {};
+		template<> struct result_info<Mode::ATL, void, VARIANT*> : result_info_normal<ATL::CComVariant> {};
 #endif
 #ifdef _INC_COMIP
 		template<class Interface> struct result_info<Mode::CCS, void, Interface**, std::enable_if_t<std::is_base_of_v<IUnknown, Interface>>> : result_info_normal<_com_ptr_t<_com_IIID<Interface, &__uuidof(Interface)>>> {};
@@ -81,6 +82,7 @@ namespace sayuri {
 			using result_type = _bstr_t;
 			static inline auto get_address(result_type&& result) { return result.GetAddress(); }
 		};
+		template<> struct result_info<Mode::CCS, void, VARIANT*> : result_info_normal<_variant_t> {};
 #endif
 
 		template<bool ignoreReturn> struct invoker {
