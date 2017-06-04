@@ -6,38 +6,123 @@
 
 Windows APIには
 
-    HRESULT Direct3DCreate9Ex(
-      _In_  UINT         SDKVersion,
-      _Out_ IDirect3D9Ex **ppD3D
+    HRESULT CoCreateGuid(
+      _Out_ GUID *pguid
     );
 
-のように関数の戻り値としては`HRESULT`のようなエラー値、実際の戻り値は関数の最終引数としたAPIが存在します。またCOMインターフェースも同様です。このようなAPIを呼び出すには
 
-    IDirect3D9Ex* pD3D;
-    auto result = Direct3DCreate9Ex(D3D_SDK_VERSION, &pD3D);
-    if (FAILED(result)) throw result;
+のように関数の戻り値としては`HRESULT`のようなエラー値、実際の戻り値は関数の最終引数としたAPIが存在します。このようなAPIを呼び出すには
+
+    GUID guid;
+    auto hr = CoCreateGuid(&guid);
+    if (FAILED(hr)) throw hr;
 
 といったコーディングパターンとなりますが、API呼び出し一つ一つがこのように繰り返されると非常に煩雑で、コードの見通しが悪くなります。`sayuri::get()`はC++コンパイラーの型推論を駆使することで
 
-    auto pD3D = sayuri::get(Direct3DCreate9Ex, D3D_SDK_VERSION);
+    auto guid = sayuri::get(CoCreateGuid);
 
-とAPI呼び出しを代替し、簡単なコード記述を提供します。
+とAPI呼び出しを代替するコード記述を提供します。
 
 ## Usage
 
-    HRESULT Direct3DCreate9Ex(UINT SDKVersion, IDirect3D9Ex **ppD3D);
+    HRESULT CoCreateGuid(
+      _Out_ GUID *pguid
+    );
 
 に対して
 
-    auto pD3D = sayuri::get(Direct3DCreate9Ex, D3D_SDK_VERSION);
+    auto guid = sayuri::get(CoCreateGuid);
 
 と記述すると
 
-    IDirect3D9Ex* pD3D;
-    auto _result = Direct3DCreate9Ex(D3D_SDK_VERSION, &pD3D);
-    check(_result);
+    GUID guid;
+    auto hr = CoCreateGuid(&guid);
+    check(hr);
 
-に展開されます。呼び出した関数の戻り値型に応じた`void check(RESULT)`関数を用意してください。
+に展開されます。呼び出した関数の戻り値型に応じた`void check(<returned type>)`関数を用意してください。（上記の例では`void check(HRESULT)`を呼び出します。）
+
+当然ながら呼び出した関数の戻り値型が`void`の場合は`check()`を呼び出しません。
+
+### 戻り値の破棄
+
+`sayuri::get()`は型引数でモードを指定することができます。`sayuri::Mode::Ignore`を指定すると戻り値を破棄し、`check()`を呼び出さなくなります。
+
+    auto guid = sayuri::get<sayuri::Mode::Ignore>(CoCreateGuid);
+
+と記述すると
+
+    GUID guid;
+    CoCreateGuid(&guid);
+
+に展開します。
+
+### 任意引数
+
+`sayuri::get()`は任意引数に対応しています。`std::invoke()`の要領で、関数名に続けて渡したい引数を並べることができます。
+
+    HRESULT CLSIDFromProgID(
+      _In_  LPCOLESTR lpszProgID,
+      _Out_ LPCLSID   lpclsid
+    );
+
+に対して
+
+    auto clsid = sayuri::get(CLSIDFromProgID, L"Excel.Application");
+
+と記述すると
+
+    CLSID clsid;
+    auto hr = CLSIDFromProgID(L"Excel.Application", &clsid);
+    check(hr);
+
+に展開します。
+
+### COMインスタンス生成
+
+COMインスタンスを生成するためには`CoCreateInstance()`を使用しますが、プロトタイプ宣言は
+
+    HRESULT CoCreateInstance(
+      _In_  REFCLSID  rclsid,
+      _In_  LPUNKNOWN pUnkOuter,
+      _In_  DWORD     dwClsContext,
+      _In_  REFIID    riid,
+      _Out_ LPVOID    *ppv
+    );
+
+です。通常の呼び出し方法であれば
+
+    HRESULT hr;
+    CLSID clsid;
+    hr = CLSIDFromProgID(L"Excel.Application", &clsid);
+    if (FAILED(hr)) throw hr;
+    Application* application;
+    hr = CoCreateInstance(clsid, nullptr, CLSCTX_ALL, IID_PPV_ARGS(&application));
+    if (FAILED(hr)) throw hr;
+
+このようになります。ここで最終引数`LPVOID* ppv`からは`Application*`を型推論することができません。そのため`sayuri::get()`では明示的に型引数を受け取るオーバーロードを用意しています。
+
+    auto clsid = sayuri::get(CLSIDFromProgID, L"Excel.Application");
+    auto application = sayuri::get<Application>(CoCreateInstance, clsid, nullptr, CLSCTX_ALL, __uuidof(Application));
+
+と書けます。更に`__uuidof()`を自動的に補完することもでき
+
+    auto clsid = sayuri::get(CLSIDFromProgID, L"Excel.Application");
+    auto application = sayuri::get<Application>(CoCreateInstance, clsid, nullptr, CLSCTX_ALL);
+
+と呼び出すこともできます。
+
+これは`CoCreateInstance()`に限りません。`IID_PPV_ARGS()`を使用可能な関数、つまり`REFIID`を受け取り`LPVOID*`を返す関数に適用できます。例えば`CreateDXGIFactory()`もその一つです。
+
+    HRESULT CreateDXGIFactory(
+            REFIID riid,
+      _Out_ void   **ppFactory
+    );
+
+に対して
+
+    auto factory = sayuri::get<IDXGIFactory>(CreateDXGIFactory);
+
+と書けます。
 
 ### COMライブラリ
 
@@ -47,36 +132,46 @@ Visual C++では各種ライブラリによるCOMスマートポインターが�
  - [Active Template Library](https://msdn.microsoft.com/ja-jp/library/t9adwcde.aspx)
  - [Compiler COM Support](https://msdn.microsoft.com/ja-jp/library/h31ekh7e.aspx)
 
-に対応してます。`sayuri::Mode::WRL`を指定すると
+に対応しています。
 
-    auto d3d = sayuri::get<sayuri::Mode::WRL>(Direct3DCreate9Ex, D3D_SDK_VERSION);
-    // ↓
-    Microsoft::WRL::ComPtr<IDirect3D9Ex> d3d;
-    auto _result = Direct3DCreate9Ex(D3D_SDK_VERSION, &d3d);
-    check(_result);
+戻り値がCOMインターフェースとなる場合に`sayuri::Mode::WRL`を指定するとWindows Runtime C++ Template Libraryクラスを使用します。
 
-に展開され、`sayuri::Mode::ATL`を指定すると
+    auto application = sayuri::get<Application, sayuri::Mode::WRL>(CoCreateInstance, clsid, nullptr, CLSCTX_ALL);
 
-    auto d3d = sayuri::get<sayuri::Mode::ATL>(Direct3DCreate9Ex, D3D_SDK_VERSION);
-    // ↓
-    ATL::CComPtr<IDirect3D9Ex> d3d;
-    auto _result = Direct3DCreate9Ex(D3D_SDK_VERSION, &d3d);
-    check(_result);
+の場合、`application`の型は`Microsoft::WRL::ComPtr<Application>`になります。
 
-に展開され、`sayuri::Mode::CCS`を指定すると
+`sayuri::Mode::ATL`を指定するとActive Template Libraryクラスを使用します。
 
-    auto d3d = sayuri::get<sayuri::Mode::CCS>(Direct3DCreate9Ex, D3D_SDK_VERSION);
-    // ↓
-    IDirect3D9ExPtr d3d;
-    auto _result = Direct3DCreate9Ex(D3D_SDK_VERSION, &d3d);
-    check(_result);
+    auto application = sayuri::get<Application, sayuri::Mode::ATL>(CoCreateInstance, clsid, nullptr, CLSCTX_ALL);
 
-に展開されます。`sayuri::Mode::Ignore`を指定すると戻り値を無視し`check()`の呼び出しを抑止できます。
+の場合、`application`の型は`ATL::CComPtr<Application>`になります。
 
-    auto d3d = sayuri::get<sayuri::Mode::WRL|sayuri::Mode::Ignore>(Direct3DCreate9Ex, D3D_SDK_VERSION);
-    // ↓
-    Microsoft::WRL::ComPtr<IDirect3D9Ex> d3d;
-    Direct3DCreate9Ex(D3D_SDK_VERSION, &d3d);
+`sayuri::Mode::CCS`を指定するとCompiler COM Supportクラスを使用します。
+
+    auto application = sayuri::get<Application, sayuri::Mode::CCS>(CoCreateInstance, clsid, nullptr, CLSCTX_ALL);
+
+の場合、`application`の型は`_com_ptr_t`を使用した`ApplicationPtr`になります。
+
+`sayuri::Mode::None`を指定するとCOMライブラリを使用しません。
+
+    auto application = sayuri::get<Application, sayuri::Mode::CCS>(CoCreateInstance, clsid, nullptr, CLSCTX_ALL);
+
+の場合、`application`の型は`Application*`になります。
+
+`GET_MODE_DEFAULT`マクロ定数を使用してデフォルトで使用するCOMライブラリを指定できます。
+
+に展開されます。
+
+### BSTRとVARIANT
+
+`BSTR`と`VARIANT`についてもCOMサポートライブラリが用意されています。
+
+- `sayuri::Mode::ATL`を指定した場合
+  - `BSTR`には`ATL::CComBSTR`を使用します。
+  - `VARIANT`には`ATL::CComVARIANT`を使用します。
+- `sayuri::Mode::CCS`を指定した場合
+  - `BSTR`には`_bstr_t`を使用します。
+  - `VARIANT`には`_variant_t`を使用します。
 
 ### COMインターフェース呼び出し
 
@@ -117,38 +212,6 @@ Visual C++では各種ライブラリによるCOMスマートポインターが�
     auto d3d = sayuri::get(Direct3DCreate9Ex, D3D_SDK_VERSION);
     D3DPRESENT_PARAMETERS pp{};
     auto device = GET_MODE(sayuri::Mode::ATL, d3d, CreateDeviceEx, D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, nullptr, 0, &pp, nullptr);
-
-### COMインスタンス生成
-
-COMインスタンスを生成するためには`CoCreateInstance()`を使用しますが、プロトタイプ宣言は
-
-    HRESULT CoCreateInstance(
-      _In_  REFCLSID  rclsid,
-      _In_  LPUNKNOWN pUnkOuter,
-      _In_  DWORD     dwClsContext,
-      _In_  REFIID    riid,
-      _Out_ LPVOID    *ppv
-    );
-
-です。通常の呼び出しは`IID_PPV_ARGS()`マクロを使用して`REFIID`と`LPVOID*`との両方を指定でき、
-
-    Microsoft::WRL::ComPtr<IFileDialog> fileDialog;
-    auto _result = CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&fileDialog);
-    check(_result);
-
-となります。`sayuri::get()`を使う場合、
-
-    auto fileDialog = sayuri::get<IFileDialog>(CoCreateInstance, CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER);
-
-のように型引数で明示的にインターフェースを指定することができます。もちろん、`CreateDXGIFactory()`など類似する関数にも使えます。
-
-    auto factory = sayuri::get<IDXGIFactory>(CreateDXGIFactory);
-
-`IUnknown::QueryInterface()`や`IServiceProvider::QueryService()`などのインターフェース呼び出しでも同様にインターフェースを指定する必要があるため、`GETIF()`マクロと`GETIF_MODE()`マクロを用意しています。
-
-### BSTR
-
-`BSTR`についてもCOMサポートライブラリが用意されています。`sayuri::Mode::ATL`を指定すると`ATL::CComBSTR`が、`sayuri::Mode::CCS`を指定すると`_bstr_t`が返されます。
 
 ## Reference
 
