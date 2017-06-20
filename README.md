@@ -216,7 +216,7 @@ Visual C++では各種ライブラリによるCOMスマートポインターが�
 
     namespace sayuri {
       enum class Mode {
-        Default,    // GET_MODE_DEFAULTマクロ定数に従う
+        Default,    // GET_MODE_DEFAULTマクロ定数に従う
         None,       // COMサポートライブラリを使用しない
         WRL,        // Windows Runtime C++ Template Libraryを使用する
         ATL,        // Active Template Libraryを使用する
