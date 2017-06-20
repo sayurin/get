@@ -67,12 +67,12 @@ Windows APIには
 
 に対して
 
-    auto clsid = sayuri::get(CLSIDFromProgID, L"Excel.Application");
+    auto clsid = sayuri::get(CLSIDFromProgID, L"Shell.Application");
 
 と記述すると
 
     CLSID clsid;
-    auto hr = CLSIDFromProgID(L"Excel.Application", &clsid);
+    auto hr = CLSIDFromProgID(L"Shell.Application", &clsid);
     check(hr);
 
 に展開します。
@@ -93,21 +93,21 @@ COMインスタンスを生成するためには`CoCreateInstance()`を使用し
 
     HRESULT hr;
     CLSID clsid;
-    hr = CLSIDFromProgID(L"Excel.Application", &clsid);
+    hr = CLSIDFromProgID(L"Shell.Application", &clsid);
     if (FAILED(hr)) throw hr;
-    Application* application;
-    hr = CoCreateInstance(clsid, nullptr, CLSCTX_ALL, IID_PPV_ARGS(&application));
+    IShellDispatch2* shell;
+    hr = CoCreateInstance(clsid, nullptr, CLSCTX_ALL, IID_PPV_ARGS(&shell));
     if (FAILED(hr)) throw hr;
 
-このようになります。ここで最終引数`LPVOID* ppv`からは`Application*`を型推論することができません。そのため`sayuri::get()`では明示的に型引数を受け取るオーバーロードを用意しています。
+このようになります。ここで最終引数`LPVOID* ppv`からは`IShellDispatch2*`を型推論することができません。そのため`sayuri::get()`では明示的に型引数を受け取るオーバーロードを用意しています。
 
-    auto clsid = sayuri::get(CLSIDFromProgID, L"Excel.Application");
-    auto application = sayuri::get<Application>(CoCreateInstance, clsid, nullptr, CLSCTX_ALL, __uuidof(Application));
+    auto clsid = sayuri::get(CLSIDFromProgID, L"Shell.Application");
+    auto shell = sayuri::get<IShellDispatch2>(CoCreateInstance, clsid, nullptr, CLSCTX_ALL, __uuidof(IShellDispatch2));
 
 と書けます。更に`__uuidof()`を自動的に補完することもでき
 
-    auto clsid = sayuri::get(CLSIDFromProgID, L"Excel.Application");
-    auto application = sayuri::get<Application>(CoCreateInstance, clsid, nullptr, CLSCTX_ALL);
+    auto clsid = sayuri::get(CLSIDFromProgID, L"Shell.Application");
+    auto shell = sayuri::get<IShellDispatch2>(CoCreateInstance, clsid, nullptr, CLSCTX_ALL);
 
 と呼び出すこともできます。
 
@@ -136,27 +136,27 @@ Visual C++では各種ライブラリによるCOMスマートポインターが�
 
 戻り値がCOMインターフェースとなる場合に`sayuri::Mode::WRL`を指定するとWindows Runtime C++ Template Libraryクラスを使用します。
 
-    auto application = sayuri::get<Application, sayuri::Mode::WRL>(CoCreateInstance, clsid, nullptr, CLSCTX_ALL);
+    auto shell = sayuri::get<IShellDispatch2, sayuri::Mode::WRL>(CoCreateInstance, clsid, nullptr, CLSCTX_ALL);
 
-の場合、`application`の型は`Microsoft::WRL::ComPtr<Application>`になります。
+の場合、`shell`の型は`Microsoft::WRL::ComPtr<IShellDispatch2>`になります。
 
 `sayuri::Mode::ATL`を指定するとActive Template Libraryクラスを使用します。
 
-    auto application = sayuri::get<Application, sayuri::Mode::ATL>(CoCreateInstance, clsid, nullptr, CLSCTX_ALL);
+    auto shell = sayuri::get<IShellDispatch2, sayuri::Mode::ATL>(CoCreateInstance, clsid, nullptr, CLSCTX_ALL);
 
-の場合、`application`の型は`ATL::CComPtr<Application>`になります。
+の場合、`shell`の型は`ATL::CComPtr<IShellDispatch2>`になります。
 
 `sayuri::Mode::CCS`を指定するとCompiler COM Supportクラスを使用します。
 
-    auto application = sayuri::get<Application, sayuri::Mode::CCS>(CoCreateInstance, clsid, nullptr, CLSCTX_ALL);
+    auto shell = sayuri::get<IShellDispatch2, sayuri::Mode::CCS>(CoCreateInstance, clsid, nullptr, CLSCTX_ALL);
 
-の場合、`application`の型は`_com_ptr_t`を使用した`ApplicationPtr`になります。
+の場合、`shell`の型は`_com_ptr_t`を使用した`IShellDispatch2Ptr`になります。
 
 `sayuri::Mode::None`を指定するとCOMライブラリを使用しません。
 
-    auto application = sayuri::get<Application, sayuri::Mode::CCS>(CoCreateInstance, clsid, nullptr, CLSCTX_ALL);
+    auto shell = sayuri::get<IShellDispatch2, sayuri::Mode::CCS>(CoCreateInstance, clsid, nullptr, CLSCTX_ALL);
 
-の場合、`application`の型は`Application*`になります。
+の場合、`shell`の型は`IShellDispatch2*`になります。
 
 `GET_MODE_DEFAULT`マクロ定数を使用してデフォルトで使用するCOMライブラリを指定できます。
 
@@ -175,43 +175,40 @@ Visual C++では各種ライブラリによるCOMスマートポインターが�
 
 ### COMインターフェース呼び出し
 
-例えば`IDirect3D9Ex::CreateDeviceEx()`は次のような定義となっています。
+例えば`IShellDispatch2::GetSystemInformation()`は次のような定義となっています。
 
-    HRESULT CreateDeviceEx(
-      [in]          UINT                  Adapter,
-      [in]          D3DDEVTYPE            DeviceType,
-      [in]          HWND                  hFocusWindow,
-      [in]          DWORD                 BehaviorFlags,
-      [in, out]     D3DPRESENT_PARAMETERS *pPresentationParameters,
-      [in, out]     D3DDISPLAYMODEEX      *pFullscreenDisplayMode,
-      [out, retval] IDirect3DDevice9Ex    **ppReturnedDeviceInterface
+    HRESULT GetSystemInformation(
+      [in]          BSTR     name,
+      [retval][out] VARIANT *pv
     );
 
 これを呼び出すには
 
-    auto d3d = sayuri::get(Direct3DCreate9Ex, D3D_SDK_VERSION);
-    D3DPRESENT_PARAMETERS pp{};
-    Microsoft::WRL::ComPtr<IDirect3DDevice9Ex> device;
-    auto _result = d3d->CreateDeviceEx(D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, nullptr, 0, &pp, nullptr, &device);
-    check(_result);
+    auto clsid = sayuri::get(CLSIDFromProgID, L"Shell.Application");
+    auto shell = sayuri::get<IShellDispatch2>(CoCreateInstance, clsid, nullptr, CLSCTX_ALL);
+    _variant_t bytes;
+    auto hr = shell->GetSystemInformation(_bstr_t{ L"PhysicalMemoryInstalled" }, &bytes);
+    check(hr);
 
 となると思いますが、`sayuri::get()`を使う場合は
 
-    auto d3d = sayuri::get(Direct3DCreate9Ex, D3D_SDK_VERSION);
-    D3DPRESENT_PARAMETERS pp{};
-    auto device = sayuri::get(&IDirect3D9Ex::CreateDeviceEx, &d3d, D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, nullptr, 0, &pp, nullptr);
+    auto clsid = sayuri::get(CLSIDFromProgID, L"Shell.Application");
+    auto shell = sayuri::get<IShellDispatch2>(CoCreateInstance, clsid, nullptr, CLSCTX_ALL);
+    auto bytes = sayuri::get(&IShellDispatch2::GetSystemInformation, shell, _bstr_t{ L"PhysicalMemoryInstalled" });
 
-とメンバー関数ポインター`&IDirect3D9Ex::CreateDeviceEx`を記述する必要があり煩雑です。これを緩和するため`GET()`マクロを用意しています。
+とメンバー関数ポインター`&IShellDispatch2::GetSystemInformation`を記述する必要があり煩雑です。これを緩和するため`GET()`マクロを用意しています。
 
-    auto d3d = sayuri::get(Direct3DCreate9Ex, D3D_SDK_VERSION);
-    D3DPRESENT_PARAMETERS pp{};
-    auto device = GET(d3d, CreateDeviceEx, D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, nullptr, 0, &pp, nullptr);
+    auto clsid = sayuri::get(CLSIDFromProgID, L"Shell.Application");
+    auto shell = sayuri::get<IShellDispatch2>(CoCreateInstance, clsid, nullptr, CLSCTX_ALL);
+    auto bytes = GET(shell, GetSystemInformation, _bstr_t{ L"PhysicalMemoryInstalled" });
 
-と`GET()`マクロには第１引数にオブジェクト、第２引数にメンバー関数名、それ以降には引数を記述することができます。またモード指定可能な`GET_MODE()`マクロも用意しています。
+と`GET()`マクロには第１引数にオブジェクト、第２引数にメンバー関数名、それ以降には引数を記述することができます。この例では`bytes`の型は`_variant_t`となります。またモード指定可能な`GET_MODE()`マクロも用意しています。
 
-    auto d3d = sayuri::get(Direct3DCreate9Ex, D3D_SDK_VERSION);
-    D3DPRESENT_PARAMETERS pp{};
-    auto device = GET_MODE(sayuri::Mode::ATL, d3d, CreateDeviceEx, D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, nullptr, 0, &pp, nullptr);
+    auto clsid = sayuri::get(CLSIDFromProgID, L"Shell.Application");
+    auto shell = sayuri::get<IShellDispatch2>(CoCreateInstance, clsid, nullptr, CLSCTX_ALL);
+    auto bytes = GET_MODE(sayuri::Mode::ATL, shell, GetSystemInformation, _bstr_t{ L"PhysicalMemoryInstalled" });
+
+この例では`bytes`の型は`ATL::CComVARIANT`となります。
 
 ## Reference
 
@@ -219,7 +216,7 @@ Visual C++では各種ライブラリによるCOMスマートポインターが�
 
     namespace sayuri {
       enum class Mode {
-        Default,    // GET_MODE_DEFAULT定数に従う
+        Default,    // GET_MODE_DEFAULTマクロ定数に従う
         None,       // COMサポートライブラリを使用しない
         WRL,        // Windows Runtime C++ Template Libraryを使用する
         ATL,        // Active Template Libraryを使用する
@@ -251,11 +248,19 @@ Visual C++では各種ライブラリによるCOMスマートポインターが�
 
 ## Restriction
 
-`sayuri::get()`では`NULL`を使用できません。`NULL`は仕様により`0`と定義されています。`0`はポインター型へ代入可能ではありますが、型推論では`int`型と判断されてしまいます。そして`int`型はポインター型へ代入できないため、オーバーロード解決に失敗します。この問題を回避するために`nullptr`を使用してください。
+ - `sayuri::get()`では`NULL`を使用できません。`NULL`は仕様により`0`と定義されています。`0`はポインター型へ代入可能ではありますが、型推論では`int`型と判断されてしまいます。そして`int`型はポインター型へ代入できないため、オーバーロード解決に失敗します。この問題を回避するために`nullptr`を使用してください。
+ - 関数オーバーロードが存在する場合、関数ポインターを作成するのは煩雑です。更にメンバー関数名にオーバーロードが存在する場合、`GET()`マクロが使用できないことが多いです。
 
 ## Environment
 
-Visual Studio 2017
+次のコンパイラー環境で動作します。
+
+ - Visual Studio 2017 (v141)
+ - Visual Studio 2017 - Clang with Microsoft CodeGen (v141_clang_c2)
+ - Visual Studio 2015 (v140)
+ - Visual Studio 2015 - Clang with Microsoft CodeGen (v140_clang_c2)
+
+ただし、Visual Studio 2015ではIntelliSenseが動作せずクラッシュします。
 
 ## Auther
 
