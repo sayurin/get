@@ -40,13 +40,20 @@ namespace sayuri {
 			using lastparam_type = std::tuple_element_t<sizeof...(Params) - 1, std::tuple<Params...>>;
 		};
 		template<class Callable> struct call_info;
-		#define CALL_INFO(CALL_OPT, OPT1, OPT2) template<class Return, class... Params> struct call_info<Return (CALL_OPT*)(Params...)> : call_info_<Return, Params...> {};
-		#pragma warning(suppress: 4003)	/* warning C4003: not enough actual parameters for macro '_NON_MEMBER_CALL' */
-		_NON_MEMBER_CALL(CALL_INFO, );	// VS2017 takes 2 args and VS2015 takes 3 args.
-		#undef CALL_INFO
-		#define CALL_INFO(CALL_OPT, OPT1, OPT2) template<class Class, class Return, class... Params> struct call_info<Return (CALL_OPT Class::*)(Params...)> : call_info_<Return, Class, Params...> {};
-		_MEMBER_CALL(CALL_INFO, , );
-		#undef CALL_INFO
+		#define CALL_INFO1(CALL_OPT, ...) template<class Return, class... Params> struct call_info<Return (CALL_OPT*)(Params...)> : call_info_<Return, Params...> {};
+		#define CALL_INFO2(CALL_OPT, ...) template<class Class, class Return, class... Params> struct call_info<Return (CALL_OPT Class::*)(Params...)> : call_info_<Return, Class, Params...> {};
+#if _MSC_VER >= 1913
+		_NON_MEMBER_CALL(CALL_INFO1, , , );
+		_MEMBER_CALL(CALL_INFO2, , , );
+#elif _MSC_VER >= 1910
+		_NON_MEMBER_CALL(CALL_INFO1, );
+		_MEMBER_CALL(CALL_INFO2, , );
+#else
+		_NON_MEMBER_CALL(CALL_INFO1, , );
+		_MEMBER_CALL(CALL_INFO2, , );
+#endif
+		#undef CALL_INFO1
+		#undef CALL_INFO2
 
 		template<class T, class TT = std::remove_reference_t<T>> inline constexpr T&& forward(TT& arg) noexcept { return static_cast<T&&>(arg); }
 		template<class T, class TT = std::remove_reference_t<T>> inline constexpr T&& forward(TT&& arg) noexcept { static_assert(!std::is_lvalue_reference_v<T>, "bad forward call"); return static_cast<T&&>(arg); }
@@ -123,7 +130,7 @@ namespace sayuri {
 		return Info::get(std::forward<Callable>(callable), std::forward<Args>(args)...);
 	}
 
-#ifdef __GNUG__
+#if defined(__GNUG__) || defined(_MSVC_TRADITIONAL) && !_MSVC_TRADITIONAL
 	#define GET_MODE(MODE, OBJECT, METHOD, ...) sayuri::get<MODE>(&sayuri::details::get_interface<decltype(OBJECT)>::METHOD, OBJECT, ## __VA_ARGS__)
 	#define GET(OBJECT, METHOD, ...) GET_MODE(sayuri::Mode::Default, OBJECT, METHOD, ## __VA_ARGS__)
 	#define GETIF_MODE(INTERFACE, MODE, OBJECT, METHOD, ...) sayuri::get<INTERFACE, MODE>(&sayuri::details::get_interface<decltype(OBJECT)>::METHOD, OBJECT, ## __VA_ARGS__)
